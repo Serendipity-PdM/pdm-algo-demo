@@ -7,7 +7,7 @@ import uvicorn
 from fastapi.middleware.cors import CORSMiddleware
 
 
-# Model definition (must match your training code)
+# Model definition S
 class ImprovedRULLSTM(nn.Module):
     def __init__(self, input_size, hidden_size=64, num_layers=2, bidirectional=True, dropout=0.3):
         super().__init__()
@@ -44,21 +44,21 @@ class ImprovedRULLSTM(nn.Module):
 # --- FastAPI App ---
 app = FastAPI()
 
-# ✅ Add this to allow requests from frontend
+# Add this to allow requests from frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # You can limit this to ["http://localhost:5173"] later
+    allow_origins=["*"],  # Can limit this to ["http://localhost:5173"] later
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # --- Load model ---
-INPUT_FEATURES = 29  # 👈 Change this based on your final input size
+INPUT_FEATURES = 29  #  Change this based on final input size
 MODEL_PATH = "rul_model_500.pth"
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-model = ImprovedRULLSTM(input_size=INPUT_FEATURES)
+model = ImprovedRULLSTM(input_size=INPUT_FEATURES).to(device)
 model.load_state_dict(torch.load(MODEL_PATH, map_location=device))
 model.eval().to(device)
 
@@ -70,7 +70,10 @@ class SequenceInput(BaseModel):
 def predict_rul(data: SequenceInput):
     try:
         seq = np.array(data.sequence, dtype=np.float32)
+        print("Final layer weights:", model.fc[-1].weight)
         print("Sequence shape:", seq.shape)
+        print("First row:", seq[0])
+
 
         if seq.shape != (25, INPUT_FEATURES):
             raise ValueError(f"Expected shape (25, {INPUT_FEATURES}), got {seq.shape}")
@@ -79,7 +82,7 @@ def predict_rul(data: SequenceInput):
             input_tensor = torch.tensor(seq).unsqueeze(0).to(device)  # shape: (1, 25, input_size)
             prediction = model(input_tensor).cpu().item()
             prediction = min(prediction, 150)
-
+        print("Predicted RUL:", prediction)
         return {"rul": round(prediction, 2)}
 
     except Exception as e:

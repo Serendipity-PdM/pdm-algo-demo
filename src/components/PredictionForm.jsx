@@ -37,7 +37,14 @@ const PredictionForm = () => {
     }
 
     const data = parseTestFile(fileContent);
-    const selected = data.filter((row) => row.unit === parseInt(unit));
+    const selected = data.filter((row) => row.unit === Number(unit));
+
+    console.log("Unit input:", unit);
+    console.log("Parsed data length:", data.length);
+    console.log("Selected rows for unit:", selected.length);
+    console.log("First 3 selected rows:", selected.slice(0, 3));    
+
+
     if (selected.length < 25) {
       alert('This unit has fewer than 25 cycles.');
       return;
@@ -46,9 +53,11 @@ const PredictionForm = () => {
     const last25 = selected.slice(-25);
     const sequence = last25.map((row) => {
       const baseFeatures = row.features; // 24 features
-      const padded = [...baseFeatures, 0, 0, 0, 0, 0]; // Add 5 dummy slope features
+      const padded = [...baseFeatures, 0, 0, 0, 0, 0]; // Added 5 dummy slope features
       return padded;
     }); // shape: [25][29]
+
+    console.log("Sequence being sent:", sequence);
     
     setIsLoading(true);
     try {
