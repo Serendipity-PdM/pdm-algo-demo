@@ -3,7 +3,6 @@ from pydantic import BaseModel
 import torch
 import torch.nn as nn
 import numpy as np
-import uvicorn
 from fastapi.middleware.cors import CORSMiddleware
 
 
@@ -41,6 +40,7 @@ class ImprovedRULLSTM(nn.Module):
         normed = self.norm(last_hidden)
         return self.fc(normed)
 
+
 # --- FastAPI App ---
 app = FastAPI()
 
@@ -54,7 +54,7 @@ app.add_middleware(
 )
 
 # --- Load model ---
-INPUT_FEATURES = 29  #  Change this based on final input size
+INPUT_FEATURES = 29  # Change this based on final input size
 MODEL_PATH = "rul_model_500.pth"
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -63,8 +63,11 @@ model.load_state_dict(torch.load(MODEL_PATH, map_location=device))
 model.eval().to(device)
 
 # --- Input format ---
+
+
 class SequenceInput(BaseModel):
     sequence: list[list[float]]  # shape: [25][input_size]
+
 
 @app.post("/predict")
 def predict_rul(data: SequenceInput):
@@ -74,12 +77,13 @@ def predict_rul(data: SequenceInput):
         print("Sequence shape:", seq.shape)
         print("First row:", seq[0])
 
-
         if seq.shape != (25, INPUT_FEATURES):
-            raise ValueError(f"Expected shape (25, {INPUT_FEATURES}), got {seq.shape}")
+            raise ValueError(
+                f"Expected shape (25, {INPUT_FEATURES}), got {seq.shape}")
 
         with torch.no_grad():
-            input_tensor = torch.tensor(seq).unsqueeze(0).to(device)  # shape: (1, 25, input_size)
+            input_tensor = torch.tensor(seq).unsqueeze(
+                0).to(device)  # shape: (1, 25, input_size)
             prediction = model(input_tensor).cpu().item()
             prediction = min(prediction, 150)
         print("Predicted RUL:", prediction)
@@ -87,4 +91,3 @@ def predict_rul(data: SequenceInput):
 
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
-
