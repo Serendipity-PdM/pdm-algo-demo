@@ -1,8 +1,8 @@
 import React from 'react';
-import Header from './components/Header';
-import Hero from './components/Hero';
-import PredictionForm from './components/PredictionForm';
-import Footer from './components/Footer';
+import Header from './components/Header.tsx';
+import Hero from './components/Hero.tsx';
+import PredictionForm from './components/PredictionForm.tsx';
+import Footer from './components/Footer.tsx';
 
 const App = () => {
   return (
