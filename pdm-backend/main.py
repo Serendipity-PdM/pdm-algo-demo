@@ -4,9 +4,13 @@ import torch
 import torch.nn as nn
 import numpy as np
 from fastapi.middleware.cors import CORSMiddleware
+from pathlib import Path
 
+MODEL_PATH = Path(__file__).parent / "./rul_model_500.pth"
 
 # Model definition S
+
+
 class ImprovedRULLSTM(nn.Module):
     def __init__(self, input_size, hidden_size=64, num_layers=2, bidirectional=True, dropout=0.3):
         super().__init__()
@@ -55,7 +59,7 @@ app.add_middleware(
 
 # --- Load model ---
 INPUT_FEATURES = 29  # Change this based on final input size
-MODEL_PATH = "rul_model_500.pth"
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 model = ImprovedRULLSTM(input_size=INPUT_FEATURES).to(device)
