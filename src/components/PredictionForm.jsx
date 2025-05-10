@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 const PredictionForm = () => {
   const [fileContent, setFileContent] = useState('');
   const [unit, setUnit] = useState('');
+  const [start, setStart] = useState('');
   const [predictedRUL, setPredictedRUL] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -31,8 +32,8 @@ const PredictionForm = () => {
   };
 
   const handlePredict = async () => {
-    if (!fileContent || !unit) {
-      alert('Please upload the file and select a unit.');
+    if (!fileContent || !unit || !start) {
+      alert('Please upload the file, select a unit, and a start point.');
       return;
     }
 
@@ -40,25 +41,21 @@ const PredictionForm = () => {
     const selected = data.filter((row) => row.unit === Number(unit));
 
     console.log("Unit input:", unit);
+    console.log("Start input:", start);
     console.log("Parsed data length:", data.length);
     console.log("Selected rows for unit:", selected.length);
-    console.log("First 3 selected rows:", selected.slice(0, 3));    
 
-
-    if (selected.length < 25) {
-      alert('This unit has fewer than 25 cycles.');
+    const startIdx = Number(start);
+    if (startIdx < 0 || startIdx + 25 > selected.length) {
+      alert(`Invalid start index. Please select between 0 and ${selected.length - 25}`);
       return;
     }
 
-    const last25 = selected.slice(-25);
-    const sequence = last25.map((row) => {
-      const baseFeatures = row.features; // 24 features
-      const padded = [...baseFeatures, 0, 0, 0, 0, 0]; // Added 5 dummy slope features
-      return padded;
-    }); // shape: [25][29]
+    const window25 = selected.slice(startIdx, startIdx + 25);
+    const sequence = window25.map((row) => row.features); // only raw 24 features
 
     console.log("Sequence being sent:", sequence);
-    
+
     setIsLoading(true);
     try {
       const res = await fetch('http://127.0.0.1:8000/predict', {
@@ -85,12 +82,22 @@ const PredictionForm = () => {
         <input type="file" accept=".txt" onChange={handleFileUpload} />
       </div>
 
-      <div className="mb-6">
+      <div className="mb-4">
         <input
           type="number"
           placeholder="Enter unit number (e.g., 1)"
           value={unit}
           onChange={(e) => setUnit(e.target.value)}
+          className="p-2 border rounded w-full max-w-xs"
+        />
+      </div>
+
+      <div className="mb-6">
+        <input
+          type="number"
+          placeholder="Enter start cycle index (e.g., 0)"
+          value={start}
+          onChange={(e) => setStart(e.target.value)}
           className="p-2 border rounded w-full max-w-xs"
         />
       </div>
