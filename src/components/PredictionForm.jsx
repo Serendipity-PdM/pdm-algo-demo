@@ -3,8 +3,8 @@ import React, { useState } from 'react';
 const PredictionForm = () => {
   const [fileContent, setFileContent] = useState('');
   const [unit, setUnit] = useState('');
-  const [start, setStart] = useState('');
   const [predictedRUL, setPredictedRUL] = useState(null);
+  const [trueRUL, setTrueRUL] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
 
   const parseTestFile = (raw) => {
@@ -32,29 +32,33 @@ const PredictionForm = () => {
   };
 
   const handlePredict = async () => {
-    if (!fileContent || !unit || !start) {
-      alert('Please upload the file, select a unit, and a start point.');
+    if (!fileContent || !unit) {
+      alert('Please upload the file and select a unit.');
       return;
     }
 
     const data = parseTestFile(fileContent);
     const selected = data.filter((row) => row.unit === Number(unit));
 
-    console.log("Unit input:", unit);
-    console.log("Start input:", start);
-    console.log("Parsed data length:", data.length);
-    console.log("Selected rows for unit:", selected.length);
-
-    const startIdx = Number(start);
-    if (startIdx < 0 || startIdx + 25 > selected.length) {
-      alert(`Invalid start index. Please select between 0 and ${selected.length - 25}`);
+    if (selected.length === 0) {
+      alert(`No data found for unit ${unit}.`);
       return;
     }
 
-    const window25 = selected.slice(startIdx, startIdx + 25);
-    const sequence = window25.map((row) => row.features); // only raw 24 features
+    // Take the last 25 cycles (or all if fewer than 25)
+    const lastCycles = selected.length > 25 ? selected.slice(-25) : selected;
 
-    console.log("Sequence being sent:", sequence);
+    if (lastCycles.length < 25) {
+      console.warn(`Unit ${unit} has only ${lastCycles.length} cycles; using all available cycles.`);
+    }
+
+    const sequence = lastCycles.map((row) => row.features);
+
+    console.log('Unit input:', unit);
+    console.log('Selected rows for unit:', selected.length);
+    console.log('Using cycles:', lastCycles.length);
+    console.log('Sequence being sent:', sequence);
+    console.log('True RUL', trueRUL)
 
     setIsLoading(true);
     try {
@@ -68,6 +72,7 @@ const PredictionForm = () => {
 
       const json = await res.json();
       setPredictedRUL(json.rul);
+
     } catch (err) {
       alert('Error predicting RUL: ' + err.message);
     }
@@ -92,16 +97,6 @@ const PredictionForm = () => {
         />
       </div>
 
-      <div className="mb-6">
-        <input
-          type="number"
-          placeholder="Enter start cycle index (e.g., 0)"
-          value={start}
-          onChange={(e) => setStart(e.target.value)}
-          className="p-2 border rounded w-full max-w-xs"
-        />
-      </div>
-
       <button
         onClick={handlePredict}
         disabled={isLoading}
@@ -111,8 +106,25 @@ const PredictionForm = () => {
       </button>
 
       {predictedRUL !== null && (
-        <div className="mt-8 p-4 bg-green-100 border border-green-300 rounded text-green-800 text-lg font-bold shadow-sm">
-          📈 Predicted RUL: {predictedRUL} cycles
+        <div className="mt-8 flex flex-col items-center space-y-4">
+          <div className="flex space-x-4">
+            <div className="p-4 bg-green-100 border border-green-300 rounded text-green-800 text-lg font-bold shadow-sm">
+              📈 Predicted RUL: {Number(predictedRUL).toFixed(2)} cycles
+            </div>
+            {trueRUL === null && (
+              <div className="p-4 bg-blue-100 border border-blue-300 rounded text-blue-800 text-lg font-bold shadow-sm">
+                🎯 True RUL: {Number(trueRUL).toFixed(2)} cycles
+              </div>
+            )}
+          </div>
+          {trueRUL === null && (
+            <div
+              className="p-4 bg-gray-100 border border-gray-300 rounded text-gray-800 text-lg font-bold shadow-sm"
+              title="Difference between true RUL and predicted RUL (True RUL − Predicted RUL)"
+            >
+              🔍 Difference: {(trueRUL - predictedRUL).toFixed(2)} cycles
+            </div>
+          )}
         </div>
       )}
     </section>
