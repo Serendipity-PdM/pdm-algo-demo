@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 
 const PredictionForm = () => {
   const [fileContent, setFileContent] = useState('');
+  const [rulFileContent, setRulFileContent] = useState('');
   const [unit, setUnit] = useState('');
   const [predictedRUL, setPredictedRUL] = useState(null);
   const [trueRUL, setTrueRUL] = useState(null);
@@ -9,37 +10,46 @@ const PredictionForm = () => {
 
   const parseTestFile = (raw) => {
     const lines = raw.trim().split('\n');
-    const parsed = lines.map((line) => {
-      return line.trim().split(/\s+/).slice(0, 26).map(Number);
+    return lines.map((line) => {
+      const cols = line.trim().split(/\s+/).slice(0, 26).map(Number);
+      return { unit: cols[0], time: cols[1], features: cols.slice(2) };
     });
+  };
 
-    return parsed.map((row) => ({
-      unit: row[0],
-      time: row[1],
-      features: row.slice(2), // operational settings + 21 sensors = 24 features
-    }));
+  const parseRULFile = (raw) => {
+    // Each line corresponds to the true RUL for units 1..N
+    const lines = raw.trim().split('\n');
+    const values = lines.map((line) => Number(line.trim().split(/\s+/)[0]));
+    return values.reduce((acc, rul, idx) => {
+      acc[idx + 1] = rul;
+      return acc;
+    }, {});
   };
 
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
-
     const reader = new FileReader();
-    reader.onload = (event) => {
-      setFileContent(event.target.result);
-    };
+    reader.onload = (event) => setFileContent(event.target.result);
+    reader.readAsText(file);
+  };
+
+  const handleRULUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => setRulFileContent(event.target.result);
     reader.readAsText(file);
   };
 
   const handlePredict = async () => {
-    if (!fileContent || !unit) {
-      alert('Please upload the file and select a unit.');
+    if (!fileContent || !unit || !rulFileContent) {
+      alert('Please upload test data, RUL file, and select a unit.');
       return;
     }
 
     const data = parseTestFile(fileContent);
     const selected = data.filter((row) => row.unit === Number(unit));
-
     if (selected.length === 0) {
       alert(`No data found for unit ${unit}.`);
       return;
@@ -47,18 +57,7 @@ const PredictionForm = () => {
 
     // Take the last 25 cycles (or all if fewer than 25)
     const lastCycles = selected.length > 25 ? selected.slice(-25) : selected;
-
-    if (lastCycles.length < 25) {
-      console.warn(`Unit ${unit} has only ${lastCycles.length} cycles; using all available cycles.`);
-    }
-
     const sequence = lastCycles.map((row) => row.features);
-
-    console.log('Unit input:', unit);
-    console.log('Selected rows for unit:', selected.length);
-    console.log('Using cycles:', lastCycles.length);
-    console.log('Sequence being sent:', sequence);
-    console.log('True RUL', trueRUL)
 
     setIsLoading(true);
     try {
@@ -67,14 +66,15 @@ const PredictionForm = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sequence }),
       });
-
       if (!res.ok) throw new Error('Prediction failed.');
+      const { rul } = await res.json();
+      setPredictedRUL(rul);
 
-      const json = await res.json();
-      setPredictedRUL(json.rul);
-
+      // Use provided RUL file directly (true remaining cycles)
+      const rulMap = parseRULFile(rulFileContent);
+      setTrueRUL(rulMap[Number(unit)]);
     } catch (err) {
-      alert('Error predicting RUL: ' + err.message);
+      alert('Error: ' + err.message);
     }
     setIsLoading(false);
   };
@@ -84,7 +84,12 @@ const PredictionForm = () => {
       <h3 className="text-2xl font-semibold mb-4 text-gray-800">Predict RUL</h3>
 
       <div className="mb-4">
+        <label className="block mb-2">Upload test data:</label>
         <input type="file" accept=".txt" onChange={handleFileUpload} />
+      </div>
+      <div className="mb-4">
+        <label className="block mb-2">Upload RUL file:</label>
+        <input type="file" accept=".txt" onChange={handleRULUpload} />
       </div>
 
       <div className="mb-4">
@@ -111,18 +116,18 @@ const PredictionForm = () => {
             <div className="p-4 bg-green-100 border border-green-300 rounded text-green-800 text-lg font-bold shadow-sm">
               📈 Predicted RUL: {Number(predictedRUL).toFixed(2)} cycles
             </div>
-            {trueRUL === null && (
+            {trueRUL !== null && (
               <div className="p-4 bg-blue-100 border border-blue-300 rounded text-blue-800 text-lg font-bold shadow-sm">
-                🎯 True RUL: {Number(trueRUL).toFixed(2)} cycles
+                🎯 True RUL: {trueRUL.toFixed(2)} cycles
               </div>
             )}
           </div>
-          {trueRUL === null && (
+          {trueRUL !== null && (
             <div
               className="p-4 bg-gray-100 border border-gray-300 rounded text-gray-800 text-lg font-bold shadow-sm"
-              title="Difference between true RUL and predicted RUL (True RUL − Predicted RUL)"
+              title="True RUL − Predicted RUL"
             >
-              🔍 Difference: {(trueRUL - predictedRUL).toFixed(2)} cycles
+              🔍 Difference: {Math.abs((trueRUL - predictedRUL).toFixed(2))} cycles
             </div>
           )}
         </div>
