@@ -121,6 +121,29 @@ const PredictionForm = () => {
       >
         {isLoading ? 'Predicting...' : 'Predict RUL'}
       </button>
+      {/* prediction results */}
+      {predictedRUL !== null && (
+        <div className="mt-8 flex flex-col items-center space-y-4">
+          <div className="flex space-x-4">
+            <div className="p-4 bg-green-100 border border-green-300 rounded text-green-800 text-lg font-bold shadow-sm">
+              📈 Predicted RUL: {Number(predictedRUL).toFixed(2)} cycles
+            </div>
+            {trueRUL !== null && (
+              <div className="p-4 bg-blue-100 border border-blue-300 rounded text-blue-800 text-lg font-bold shadow-sm">
+                🎯 True RUL: {trueRUL.toFixed(2)} cycles
+              </div>
+            )}
+          </div>
+          {trueRUL !== null && (
+            <div
+              className="p-4 bg-gray-100 border border-gray-300 rounded text-gray-800 text-lg font-bold shadow-sm"
+              title="True RUL − Predicted RUL"
+            >
+              🔍 Difference: {Math.abs((trueRUL - predictedRUL).toFixed(2))} cycles
+            </div>
+          )}
+        </div>
+      )}
 
       {/* preview table */}
       {previewSequence.length > 0 && (
@@ -149,28 +172,6 @@ const PredictionForm = () => {
         </div>
       )}
 
-      {predictedRUL !== null && (
-        <div className="mt-8 flex flex-col items-center space-y-4">
-          <div className="flex space-x-4">
-            <div className="p-4 bg-green-100 border border-green-300 rounded text-green-800 text-lg font-bold shadow-sm">
-              📈 Predicted RUL: {Number(predictedRUL).toFixed(2)} cycles
-            </div>
-            {trueRUL !== null && (
-              <div className="p-4 bg-blue-100 border border-blue-300 rounded text-blue-800 text-lg font-bold shadow-sm">
-                🎯 True RUL: {trueRUL.toFixed(2)} cycles
-              </div>
-            )}
-          </div>
-          {trueRUL !== null && (
-            <div
-              className="p-4 bg-gray-100 border border-gray-300 rounded text-gray-800 text-lg font-bold shadow-sm"
-              title="True RUL − Predicted RUL"
-            >
-              🔍 Difference: {Math.abs((trueRUL - predictedRUL).toFixed(2))} cycles
-            </div>
-          )}
-        </div>
-      )}
     </section>
   );
 };
