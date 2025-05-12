@@ -95,6 +95,7 @@ const PredictionForm = () => {
       <div className="mb-4">
         <input
           type="number"
+          min="0"
           placeholder="Enter unit number (e.g., 1)"
           value={unit}
           onChange={(e) => setUnit(e.target.value)}
