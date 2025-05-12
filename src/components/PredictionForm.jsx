@@ -17,6 +17,17 @@ const PredictionForm = () => {
     });
   };
 
+  const parseRULFile = (raw) => {
+    const lines = raw.trim().split('\n');
+    const values = lines.map((line) => Number(line.trim().split(/\s+/)[0]));
+    return values.reduce((acc, rul, idx) => {
+      acc[idx + 1] = rul;
+      return acc;
+    }, {});
+  };
+
+
+  // whenever test data or selected unit changes, update the preview sequence
   useEffect(() => {
     if (!fileContent || !unit) {
       setPreviewSequence([]);
@@ -67,6 +78,7 @@ const PredictionForm = () => {
       const { rul } = await res.json();
       setPredictedRUL(rul);
 
+      // parse the true RUL and set it
       const rulMap = parseRULFile(rulFileContent);
       setTrueRUL(rulMap[Number(unit)]);
     } catch (err) {
@@ -101,9 +113,19 @@ const PredictionForm = () => {
         />
       </div>
 
+
+      <button
+        onClick={handlePredict}
+        disabled={isLoading}
+        className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-6 rounded transition"
+      >
+        {isLoading ? 'Predicting...' : 'Predict RUL'}
+      </button>
+
+      {/* preview table */}
       {previewSequence.length > 0 && (
         <div className="mb-4 text-left overflow-auto w-full">
-          <h4 className="font-medium mb-2 text-gray-700">Sequence to send:</h4>
+          <h4 className="font-medium mb-2 text-gray-700">Data preview</h4>
           <table className="table-auto min-w-full border-collapse border border-gray-300 text-sm">
             <thead>
               <tr>
@@ -126,14 +148,6 @@ const PredictionForm = () => {
           </table>
         </div>
       )}
-
-      <button
-        onClick={handlePredict}
-        disabled={isLoading}
-        className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-6 rounded transition"
-      >
-        {isLoading ? 'Predicting...' : 'Predict RUL'}
-      </button>
 
       {predictedRUL !== null && (
         <div className="mt-8 flex flex-col items-center space-y-4">
