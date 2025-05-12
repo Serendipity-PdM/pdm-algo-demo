@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 const PredictionForm = () => {
   const [fileContent, setFileContent] = useState('');
@@ -7,6 +7,7 @@ const PredictionForm = () => {
   const [predictedRUL, setPredictedRUL] = useState(null);
   const [trueRUL, setTrueRUL] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [previewSequence, setPreviewSequence] = useState([]);
 
   const parseTestFile = (raw) => {
     const lines = raw.trim().split('\n');
@@ -16,15 +17,21 @@ const PredictionForm = () => {
     });
   };
 
-  const parseRULFile = (raw) => {
-    // Each line corresponds to the true RUL for units 1..N
-    const lines = raw.trim().split('\n');
-    const values = lines.map((line) => Number(line.trim().split(/\s+/)[0]));
-    return values.reduce((acc, rul, idx) => {
-      acc[idx + 1] = rul;
-      return acc;
-    }, {});
-  };
+  useEffect(() => {
+    if (!fileContent || !unit) {
+      setPreviewSequence([]);
+      return;
+    }
+    const data = parseTestFile(fileContent);
+    const selected = data.filter((row) => row.unit === Number(unit));
+    if (!selected.length) {
+      setPreviewSequence([]);
+    } else {
+      const lastCycles = selected.length > 25 ? selected.slice(-25) : selected;
+      const seq = lastCycles.map((row) => row.features);
+      setPreviewSequence(seq);
+    }
+  }, [fileContent, unit]);
 
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
@@ -43,34 +50,23 @@ const PredictionForm = () => {
   };
 
   const handlePredict = async () => {
-    if (!fileContent || !unit || !rulFileContent) {
-      alert('Please upload test data, RUL file, and select a unit.');
+    if (!previewSequence.length || !rulFileContent) {
+      alert('Please upload test data, select a unit, and upload RUL file.');
       return;
     }
-
-    const data = parseTestFile(fileContent);
-    const selected = data.filter((row) => row.unit === Number(unit));
-    if (selected.length === 0) {
-      alert(`No data found for unit ${unit}.`);
-      return;
-    }
-
-    // Take the last 25 cycles (or all if fewer than 25)
-    const lastCycles = selected.length > 25 ? selected.slice(-25) : selected;
-    const sequence = lastCycles.map((row) => row.features);
 
     setIsLoading(true);
     try {
+      const payload = { sequence: previewSequence };
       const res = await fetch('http://127.0.0.1:8000/predict', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sequence }),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error('Prediction failed.');
       const { rul } = await res.json();
       setPredictedRUL(rul);
 
-      // Use provided RUL file directly (true remaining cycles)
       const rulMap = parseRULFile(rulFileContent);
       setTrueRUL(rulMap[Number(unit)]);
     } catch (err) {
@@ -80,16 +76,18 @@ const PredictionForm = () => {
   };
 
   return (
-    <section className="py-12 px-6 max-w-xl mx-auto text-center">
+    <section className="py-12 px-6 max-w-3xl mx-auto text-center">
       <h3 className="text-2xl font-semibold mb-4 text-gray-800">Predict RUL</h3>
 
-      <div className="mb-4">
-        <label className="block mb-2">Upload test data:</label>
-        <input type="file" accept=".txt" onChange={handleFileUpload} />
-      </div>
-      <div className="mb-4">
-        <label className="block mb-2">Upload RUL file:</label>
-        <input type="file" accept=".txt" onChange={handleRULUpload} />
+      <div className="flex flex-col sm:flex-row sm:space-x-4 mb-4">
+        <div className="flex-1 mb-4 sm:mb-0">
+          <label className="block mb-2">Upload test data:</label>
+          <input type="file" accept=".txt" onChange={handleFileUpload} />
+        </div>
+        <div className="flex-1">
+          <label className="block mb-2">Upload RUL file:</label>
+          <input type="file" accept=".txt" onChange={handleRULUpload} />
+        </div>
       </div>
 
       <div className="mb-4">
@@ -102,6 +100,32 @@ const PredictionForm = () => {
           className="p-2 border rounded w-full max-w-xs"
         />
       </div>
+
+      {previewSequence.length > 0 && (
+        <div className="mb-4 text-left overflow-auto w-full">
+          <h4 className="font-medium mb-2 text-gray-700">Sequence to send:</h4>
+          <table className="table-auto min-w-full border-collapse border border-gray-300 text-sm">
+            <thead>
+              <tr>
+                <th className="border border-gray-300 px-2 py-1">Cycle</th>
+                {previewSequence[0].map((_, i) => (
+                  <th key={i} className="border border-gray-300 px-2 py-1">f{i + 1}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {previewSequence.map((row, idx) => (
+                <tr key={idx}>
+                  <td className="border border-gray-300 px-2 py-1 text-center">{idx + 1}</td>
+                  {row.map((val, j) => (
+                    <td key={j} className="border border-gray-300 px-2 py-1 text-right">{val}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       <button
         onClick={handlePredict}
