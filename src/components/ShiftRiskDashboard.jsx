@@ -3,6 +3,10 @@ import { useEffect, useState } from "react";
 export default function ShiftRiskDashboard() {
   const [shiftData, setShiftData] = useState([]);
   const [filter, setFilter] = useState("All");
+  const filteredData =
+  filter === "All"
+    ? shiftData
+    : shiftData.filter((entry) => entry.risk_factor === filter);
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState({
     shift_type: "Morning",
@@ -16,16 +20,22 @@ export default function ShiftRiskDashboard() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    fetch("/load_shift_data")
+    fetch("http://localhost:8000/load_shift_data")
       .then((res) => res.json())
-      .then(setShiftData)
-      .catch(console.error);
-  }, []);
+      .then((data) => {
+        if (Array.isArray(data)) {
+          setShiftData(data);
+        } else {
+          console.error("Invalid data format:", data);
+          setShiftData([]);
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to load shift data", err);
+        setShiftData([]); // Avoid crash on render
+      });
+  }, []);  
 
-  const filteredData =
-    filter === "All"
-      ? shiftData
-      : shiftData.filter((entry) => entry.risk_factor === filter);
 
   const handleFormChange = (e) => {
     const { name, value } = e.target;
@@ -146,8 +156,9 @@ export default function ShiftRiskDashboard() {
 
       <div className="overflow-x-auto">
         <table className="w-full border text-sm">
-          <thead className="bg-gray-200">
+                  <thead className="bg-gray-200">
             <tr>
+              <th className="p-2 text-left border">Worker No</th>
               {[
                 "shift_type",
                 "operator_id",
@@ -165,9 +176,10 @@ export default function ShiftRiskDashboard() {
               ))}
             </tr>
           </thead>
-          <tbody>
-            {filteredData.map((row, idx) => (
+                    <tbody>
+            {Array.isArray(filteredData) && filteredData.map((row, idx) => (
               <tr key={idx} className="odd:bg-white even:bg-gray-50">
+                <td className="p-2 border font-semibold">{idx + 1}</td>
                 {[
                   "shift_type",
                   "operator_id",

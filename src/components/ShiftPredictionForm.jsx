@@ -28,25 +28,77 @@ export default function ShiftPredictionForm() {
     e.preventDefault();
     setLoading(true);
     setResult(null);
-
+  
+    const shiftMap = {
+      "Morning": [1, 0, 0], // if you trained with 3
+      "Afternoon": [0, 1, 0],
+      "Night": [0, 0, 1],
+    };
+    
+    const expMap = {
+      "Intern": [1, 0, 0, 0, 0],
+      "Beginner": [0, 1, 0, 0, 0],
+      "Intermediate": [0, 0, 1, 0, 0],
+      "Experienced": [0, 0, 0, 1, 0],
+      "Expert": [0, 0, 0, 0, 1],
+    };
+    
+    const genderMap = {
+      "Male": [1, 0],
+      "Female": [0, 1],
+    };
+    
+  
+    // Build numeric + dummy vector
+    const numeric = [
+      formData.operator_id,
+      formData.age,
+      formData.avg_week_hours,
+      formData.last_year_incidents,
+    ];
+  
+    const dummies = [
+      ...shiftMap[formData.shift_type],
+      ...expMap[formData.experience_level],
+      ...genderMap[formData.gender],
+    ];
+  
+    const vector = [...numeric, ...dummies]; // should be 11 features
+  
     try {
       const response = await fetch("http://localhost:8000/predict_shift", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({ vector }), // ✅ send as 'vector' key
       });
-
+  
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("Backend error response:", errorText);
+        setResult("Error: " + response.status);
+        return;
+      }
+  
       const data = await response.json();
-      setResult(data.predicted_time_cycles.toFixed(2));
+      console.log("Prediction response:", data);
+  
+      if (data && typeof data.predicted_time_cycles === "number") {
+        setResult(data.predicted_time_cycles.toFixed(2));
+      } else {
+        console.error("Unexpected response format:", data);
+        setResult("Invalid response");
+      }
     } catch (error) {
       console.error("Prediction failed:", error);
-      setResult("Error");
+      setResult("Network error");
     } finally {
       setLoading(false);
     }
   };
+  
+  
 
   return (
     <div className="p-6 max-w-md mx-auto bg-white rounded-xl shadow-md space-y-4">

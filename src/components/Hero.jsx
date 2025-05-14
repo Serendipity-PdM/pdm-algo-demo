@@ -7,7 +7,7 @@ const Hero = () => {
         Predictive Maintenance Demo
       </h2>
       <p className="text-gray-700 max-w-xl mx-auto text-lg">
-        This simple interface lets us visualize and test our machine learning model that predicts the Remaining Useful Life (RUL) of aircraft engines using the NASA C-MAPSS FD001 dataset.
+        This simple interface lets us visualize and test our machine learning model that predicts the Remaining Useful Life (RUL) of the NASA C-MAPSS FD001 dataset with machine and shift datas.
       </p>
     </section>
   );

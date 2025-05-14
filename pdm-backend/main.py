@@ -44,92 +44,45 @@ class ImprovedMLP(torch.nn.Module):
     def forward(self, x):
         return self.net(x)
 
-# --- Load Shift Model ---
+# Load shift model
 shift_scaler = joblib.load("mlp_shift_scaler.pkl")
-shift_model = ImprovedMLP(input_size=15).to(device)
+shift_model = ImprovedMLP(input_size=11).to(device)
 shift_model.load_state_dict(torch.load("mlp_shift_model.pth", map_location=device))
 shift_model.eval()
 
-# --- Shift API Schema ---
-class ShiftDataRequest(BaseModel):
-    shift_type: str
-    operator_id: int
-    experience_level: str
-    age: int
-    gender: str
-    avg_week_hours: float
-    last_year_incidents: int
+class ShiftVectorRequest(BaseModel):
+    vector: list[float]
 
 @app.post("/predict_shift")
-def predict_shift(data: ShiftDataRequest):
-    print("Received:", data)
-    shift_map = {"Morning": [1, 0, 0], "Afternoon": [0, 1, 0], "Night": [0, 0, 1]}
-    exp_map = {
-        "Intern": [1, 0, 0, 0, 0],
-        "Beginner": [0, 1, 0, 0, 0],
-        "Intermediate": [0, 0, 1, 0, 0],
-        "Experienced": [0, 0, 0, 1, 0],
-        "Expert": [0, 0, 0, 0, 1]
-    }
-    gender_map = {"Male": [1, 0], "Female": [0, 1]}
+def predict_shift(data: ShiftVectorRequest):
+    if len(data.vector) != 13:
+        raise HTTPException(status_code=400, detail=f"Expected 11 input features, got {len(data.vector)}")
 
-    row = [
-        data.operator_id,
-        data.age,
-        data.avg_week_hours,
-        data.last_year_incidents
-    ] + shift_map.get(data.shift_type, [0, 0, 0]) \
-      + exp_map.get(data.experience_level, [0, 0, 0, 0, 0]) \
-      + gender_map.get(data.gender, [0, 0])
-
-    if len(row) != 13:
-        raise HTTPException(status_code=400, detail=f"Expected 13 input features, got {len(row)}")
-
-    X = np.array([row])
-    X_scaled = shift_scaler.transform(X)
-    X_tensor = torch.tensor(X_scaled, dtype=torch.float32).to(device)
+    input_array = np.array(data.vector).reshape(1, -1)
+    input_tensor = torch.tensor(input_array, dtype=torch.float32).to(device)
 
     with torch.no_grad():
-        pred = shift_model(X_tensor).cpu().item()
+        pred = shift_model(input_tensor).cpu().item()
 
     return {"predicted_time_cycles": float(pred)}
 
 @app.get("/load_shift_data")
 def load_shift_data():
     try:
-        df = pd.read_csv("datasets/shift-data/train_FD001_with_humans.csv")
+        file_path = Path(__file__).parent / "datasets" / "shift-data" / "train_FD001_with_humans.csv"
+        df = pd.read_csv(file_path)
         return df.to_dict(orient="records")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"File load error: {e}")
 
 @app.post("/append_shift_entry")
-def append_shift_entry(data: ShiftDataRequest):
-    shift_map = {"Morning": [1, 0, 0], "Afternoon": [0, 1, 0], "Night": [0, 0, 1]}
-    exp_map = {
-        "Intern": [1, 0, 0, 0, 0],
-        "Beginner": [0, 1, 0, 0, 0],
-        "Intermediate": [0, 0, 1, 0, 0],
-        "Experienced": [0, 0, 0, 1, 0],
-        "Expert": [0, 0, 0, 0, 1]
-    }
-    gender_map = {"Male": [1, 0], "Female": [0, 1]}
+def append_shift_entry(req: ShiftVectorRequest):
+    X = np.array(req.vector, dtype=float).reshape(1, -1)
+    if X.shape[1] != 13:
+        raise HTTPException(status_code=400, detail=f"Expected 13 input features, got {X.shape[1]}")
 
-    row = [
-        data.operator_id,
-        data.age,
-        data.avg_week_hours,
-        data.last_year_incidents
-    ] + shift_map.get(data.shift_type, [0, 0, 0]) \
-      + exp_map.get(data.experience_level, [0, 0, 0, 0, 0]) \
-      + gender_map.get(data.gender, [0, 0])
-
-    if len(row) != 13:
-        raise HTTPException(status_code=400, detail=f"Expected 13 input features, got {len(row)}")
-
-    X = np.array([row])
     X_scaled = shift_scaler.transform(X)
     X_tensor = torch.tensor(X_scaled, dtype=torch.float32).to(device)
-
     with torch.no_grad():
         predicted_time_cycles = shift_model(X_tensor).cpu().item()
 
@@ -139,30 +92,31 @@ def append_shift_entry(data: ShiftDataRequest):
         else "Low"
     )
 
-    file_path = "datasets/shift-data/train_FD001_with_humans.csv"
+    field_names = [
+    "operator_id", "age", "avg_week_hours", "last_year_incidents",
+    "shift_type_Afternoon", "shift_type_Night",
+    "experience_Beginner", "experience_Intermediate", "experience_Experienced", "experience_Expert",
+    "gender_Male"
+]
+    new_entry = {name: val for name, val in zip(field_names, req.vector)}
+    new_entry["predicted_time_cycles"] = predicted_time_cycles
+    new_entry["risk_factor"] = risk
+
+    file_path = "pdm-backend/train_FD001_with_humans.csv"
     try:
         df = pd.read_csv(file_path)
     except:
         df = pd.DataFrame()
-
-    new_entry = {
-        "shift_type": data.shift_type,
-        "operator_id": data.operator_id,
-        "experience_level": data.experience_level,
-        "age": data.age,
-        "gender": data.gender,
-        "avg_week_hours": data.avg_week_hours,
-        "last_year_incidents": data.last_year_incidents,
-        "predicted_time_cycles": predicted_time_cycles,
-        "risk_factor": risk
-    }
 
     df = pd.concat([df, pd.DataFrame([new_entry])], ignore_index=True)
     df.to_csv(file_path, index=False)
 
     return new_entry
 
-# === MACHINE PREDICTION SECTION (unchanged) ===
+
+
+
+# === MACHINE PREDICTION SECTION ===
 WINDOW_SIZE = 25
 RAW_FEATURES = ["os1", "os2", "os3"] + [f"s_{i}" for i in range(1, 22)]
 DROP_SENSORS = ["s_1", "s_5", "s_6", "s_10", "s_16", "s_18", "s_19"]
@@ -206,6 +160,7 @@ class ImprovedRULLSTM(torch.nn.Module):
         normed = self.norm(last_hidden)
         return self.fc(normed)
 
+# load scaler & LSTM model
 SCALER_PATH = Path("scaler_fd001.pkl")
 MODEL_PATH = Path("rul_model_500.pth")
 scaler = joblib.load(SCALER_PATH)
