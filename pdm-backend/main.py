@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uvicorn
 
-# --- FastAPI Setup ---
+# FastAPI Setup 
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
@@ -20,11 +20,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# --- Device Setup ---
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# === Shift MLP Model ===
+# Shift MLP Model 
 class ImprovedMLP(torch.nn.Module):
     def __init__(self, input_size):
         super().__init__()
@@ -44,21 +42,22 @@ class ImprovedMLP(torch.nn.Module):
     def forward(self, x):
         return self.net(x)
 
-# Load shift model
-shift_scaler = joblib.load("mlp_shift_scaler.pkl")
-shift_model = ImprovedMLP(input_size=11).to(device)
+# Load Trained Model
+shift_model = ImprovedMLP(input_size=15).to(device)
 shift_model.load_state_dict(torch.load("mlp_shift_model.pth", map_location=device))
 shift_model.eval()
 
+# Request Schema
 class ShiftVectorRequest(BaseModel):
     vector: list[float]
 
+# Predict Shift Endpoint
 @app.post("/predict_shift")
 def predict_shift(data: ShiftVectorRequest):
-    if len(data.vector) != 13:
-        raise HTTPException(status_code=400, detail=f"Expected 11 input features, got {len(data.vector)}")
+    if len(data.vector) != 15:
+        raise HTTPException(status_code=400, detail=f"Expected 15 input features, got {len(data.vector)}")
 
-    input_array = np.array(data.vector).reshape(1, -1)
+    input_array = np.array(data.vector, dtype=np.float32).reshape(1, -1)
     input_tensor = torch.tensor(input_array, dtype=torch.float32).to(device)
 
     with torch.no_grad():
@@ -66,6 +65,7 @@ def predict_shift(data: ShiftVectorRequest):
 
     return {"predicted_time_cycles": float(pred)}
 
+# Load Dashboard Data
 @app.get("/load_shift_data")
 def load_shift_data():
     try:
@@ -75,16 +75,17 @@ def load_shift_data():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"File load error: {e}")
 
+# Append New Entry & Predict
 @app.post("/append_shift_entry")
 def append_shift_entry(req: ShiftVectorRequest):
-    X = np.array(req.vector, dtype=float).reshape(1, -1)
-    if X.shape[1] != 13:
-        raise HTTPException(status_code=400, detail=f"Expected 13 input features, got {X.shape[1]}")
+    if len(req.vector) != 15:
+        raise HTTPException(status_code=400, detail=f"Expected 15 input features, got {len(req.vector)}")
 
-    X_scaled = shift_scaler.transform(X)
-    X_tensor = torch.tensor(X_scaled, dtype=torch.float32).to(device)
+    input_array = np.array(req.vector, dtype=np.float32).reshape(1, -1)
+    input_tensor = torch.tensor(input_array, dtype=torch.float32).to(device)
+
     with torch.no_grad():
-        predicted_time_cycles = shift_model(X_tensor).cpu().item()
+        predicted_time_cycles = shift_model(input_tensor).cpu().item()
 
     risk = (
         "High" if predicted_time_cycles < 60
@@ -92,17 +93,23 @@ def append_shift_entry(req: ShiftVectorRequest):
         else "Low"
     )
 
+    # Define field names matching the 15 columns used in training
     field_names = [
-    "operator_id", "age", "avg_week_hours", "last_year_incidents",
-    "shift_type_Afternoon", "shift_type_Night",
-    "experience_Beginner", "experience_Intermediate", "experience_Experienced", "experience_Expert",
-    "gender_Male"
-]
+        "operator_id", "age", "avg_week_hours", "last_year_incidents",
+        "shift_type_Afternoon", "shift_type_Night",
+        "experience_level_Beginner", "experience_level_Intermediate", "experience_level_Experienced", "experience_level_Expert",
+        "gender_Female", "gender_Male",
+        "extra_1", "extra_2", "extra_3"  # Rename or remove based on your actual 15 features if different
+    ]
+
+    if len(field_names) != 15:
+        raise HTTPException(status_code=500, detail="Mismatch between field names and input vector size.")
+
     new_entry = {name: val for name, val in zip(field_names, req.vector)}
     new_entry["predicted_time_cycles"] = predicted_time_cycles
     new_entry["risk_factor"] = risk
 
-    file_path = "pdm-backend/train_FD001_with_humans.csv"
+    file_path = Path(__file__).parent / "datasets" / "shift-data" / "train_FD001_with_humans.csv"
     try:
         df = pd.read_csv(file_path)
     except:
@@ -113,10 +120,7 @@ def append_shift_entry(req: ShiftVectorRequest):
 
     return new_entry
 
-
-
-
-# === MACHINE PREDICTION SECTION ===
+# Machine Predcition Section
 WINDOW_SIZE = 25
 RAW_FEATURES = ["os1", "os2", "os3"] + [f"s_{i}" for i in range(1, 22)]
 DROP_SENSORS = ["s_1", "s_5", "s_6", "s_10", "s_16", "s_18", "s_19"]
@@ -160,7 +164,7 @@ class ImprovedRULLSTM(torch.nn.Module):
         normed = self.norm(last_hidden)
         return self.fc(normed)
 
-# load scaler & LSTM model
+# Load scaler & LSTM model
 SCALER_PATH = Path("scaler_fd001.pkl")
 MODEL_PATH = Path("rul_model_500.pth")
 scaler = joblib.load(SCALER_PATH)
@@ -190,6 +194,6 @@ def predict(req: SequenceRequest):
         pred = model(tensor).cpu().item()
     return {"rul": float(min(pred, 150.0))}
 
-# --- Start Server ---
+# Start Server
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

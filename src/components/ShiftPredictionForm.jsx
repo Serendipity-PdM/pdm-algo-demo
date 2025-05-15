@@ -29,27 +29,6 @@ export default function ShiftPredictionForm() {
     setLoading(true);
     setResult(null);
   
-    const shiftMap = {
-      "Morning": [1, 0, 0], // if you trained with 3
-      "Afternoon": [0, 1, 0],
-      "Night": [0, 0, 1],
-    };
-    
-    const expMap = {
-      "Intern": [1, 0, 0, 0, 0],
-      "Beginner": [0, 1, 0, 0, 0],
-      "Intermediate": [0, 0, 1, 0, 0],
-      "Experienced": [0, 0, 0, 1, 0],
-      "Expert": [0, 0, 0, 0, 1],
-    };
-    
-    const genderMap = {
-      "Male": [1, 0],
-      "Female": [0, 1],
-    };
-    
-  
-    // Build numeric + dummy vector
     const numeric = [
       formData.operator_id,
       formData.age,
@@ -57,21 +36,52 @@ export default function ShiftPredictionForm() {
       formData.last_year_incidents,
     ];
   
+    const shiftMap = {
+      Morning:    [1, 0, 0],
+      Afternoon:  [0, 1, 0],
+      Night:      [0, 0, 1],
+    };
+    
+    const expMap = {
+      Intern:        [1, 0, 0, 0, 0],
+      Beginner:      [0, 1, 0, 0, 0],
+      Intermediate:  [0, 0, 1, 0, 0],
+      Experienced:   [0, 0, 0, 1, 0],
+      Expert:        [0, 0, 0, 0, 1],
+    };
+    
+    const genderMap = {
+      Male:   [1, 0],
+      Female: [0, 1],
+    };
+  
     const dummies = [
-      ...shiftMap[formData.shift_type],
-      ...expMap[formData.experience_level],
-      ...genderMap[formData.gender],
+      ...shiftMap[formData.shift_type],        
+      ...expMap[formData.experience_level],    
+      ...genderMap[formData.gender],           
     ];
   
-    const vector = [...numeric, ...dummies]; // should be 11 features
+    const extraFeature = 0; 
+    const vector = [
+    ...numeric,
+    ...shiftMap[formData.shift_type],
+    ...expMap[formData.experience_level],
+    ...genderMap[formData.gender],
+       extraFeature 
+];  
+  
+    if (vector.length !== 15) {
+      console.error("Invalid vector length:", vector.length, vector);
+      setResult("Feature vector incorrect.");
+      setLoading(false);
+      return;
+    }
   
     try {
       const response = await fetch("http://localhost:8000/predict_shift", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ vector }), // ✅ send as 'vector' key
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ vector }),
       });
   
       if (!response.ok) {
@@ -97,6 +107,7 @@ export default function ShiftPredictionForm() {
       setLoading(false);
     }
   };
+  
   
   
 
