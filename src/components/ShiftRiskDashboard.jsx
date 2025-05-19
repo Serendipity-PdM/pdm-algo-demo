@@ -4,9 +4,9 @@ export default function ShiftRiskDashboard() {
   const [shiftData, setShiftData] = useState([]);
   const [filter, setFilter] = useState("All");
   const filteredData =
-  filter === "All"
-    ? shiftData
-    : shiftData.filter((entry) => entry.risk_factor === filter);
+    filter === "All"
+      ? shiftData
+      : shiftData.filter((entry) => entry.risk_factor === filter);
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState({
     shift_type: "Morning",
@@ -32,10 +32,9 @@ export default function ShiftRiskDashboard() {
       })
       .catch((err) => {
         console.error("Failed to load shift data", err);
-        setShiftData([]); // Avoid crash on render
+        setShiftData([]);
       });
-  }, []);  
-
+  }, []);
 
   const handleFormChange = (e) => {
     const { name, value } = e.target;
@@ -53,27 +52,82 @@ export default function ShiftRiskDashboard() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
-
-    const response = await fetch("/append_shift_entry", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(formData),
-    });
-
-    const newEntry = await response.json();
-    setShiftData((prev) => [...prev, newEntry]);
-    setFormData({
-      shift_type: "Morning",
-      operator_id: 1,
-      experience_level: "Intermediate",
-      age: 30,
-      gender: "Male",
-      avg_week_hours: 45,
-      last_year_incidents: 1,
-    });
-    setShowForm(false);
-    setLoading(false);
+  
+    const numeric = [
+      formData.operator_id,
+      formData.age,
+      formData.avg_week_hours,
+      formData.last_year_incidents,
+    ];
+  
+    const shiftMap = {
+      Morning: [1, 0, 0],
+      Afternoon: [0, 1, 0],
+      Night: [0, 0, 1],
+    };
+  
+    const expMap = {
+      Intern:        [1, 0, 0, 0, 0],
+      Beginner:      [0, 1, 0, 0, 0],
+      Intermediate:  [0, 0, 1, 0, 0],
+      Experienced:   [0, 0, 0, 1, 0],
+      Expert:        [0, 0, 0, 0, 1],
+    };
+  
+    const genderMap = {
+      Male: [1, 0],
+      Female: [0, 1],
+    };
+  
+    const extraFeature = 0; // filler column to ensure 15 features
+  
+    const vector = [
+      ...numeric,
+      ...shiftMap[formData.shift_type],
+      ...expMap[formData.experience_level],
+      ...genderMap[formData.gender],
+      extraFeature,
+    ];
+  
+    if (vector.length !== 15) {
+      console.error("Invalid vector length:", vector.length, vector);
+      setLoading(false);
+      return;
+    }
+  
+    try {
+      const response = await fetch("http://localhost:8000/append_shift_entry", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ vector }),
+      });
+  
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("Backend error response:", errorText);
+        setLoading(false);
+        return;
+      }
+  
+      const newEntry = await response.json();
+      setShiftData((prev) => [...prev, newEntry]);
+      setFormData({
+        shift_type: "Morning",
+        operator_id: 1,
+        experience_level: "Intermediate",
+        age: 30,
+        gender: "Male",
+        avg_week_hours: 45,
+        last_year_incidents: 1,
+      });
+      setShowForm(false);
+    } catch (err) {
+      console.error("Failed to submit entry:", err);
+    } finally {
+      setLoading(false);
+    }
   };
+  
 
   return (
     <div className="p-6 max-w-screen-xl mx-auto">
@@ -156,7 +210,7 @@ export default function ShiftRiskDashboard() {
 
       <div className="overflow-x-auto">
         <table className="w-full border text-sm">
-                  <thead className="bg-gray-200">
+          <thead className="bg-gray-200">
             <tr>
               <th className="p-2 text-left border">Worker No</th>
               {[
@@ -176,27 +230,28 @@ export default function ShiftRiskDashboard() {
               ))}
             </tr>
           </thead>
-                    <tbody>
-            {Array.isArray(filteredData) && filteredData.map((row, idx) => (
-              <tr key={idx} className="odd:bg-white even:bg-gray-50">
-                <td className="p-2 border font-semibold">{idx + 1}</td>
-                {[
-                  "shift_type",
-                  "operator_id",
-                  "experience_level",
-                  "age",
-                  "gender",
-                  "avg_week_hours",
-                  "last_year_incidents",
-                  "predicted_time_cycles",
-                  "risk_factor",
-                ].map((key) => (
-                  <td key={key} className="p-2 border">
-                    {row[key]}
-                  </td>
-                ))}
-              </tr>
-            ))}
+          <tbody>
+            {Array.isArray(filteredData) &&
+              filteredData.map((row, idx) => (
+                <tr key={idx} className="odd:bg-white even:bg-gray-50">
+                  <td className="p-2 border font-semibold">{idx + 1}</td>
+                  {[
+                    "shift_type",
+                    "operator_id",
+                    "experience_level",
+                    "age",
+                    "gender",
+                    "avg_week_hours",
+                    "last_year_incidents",
+                    "predicted_time_cycles",
+                    "risk_factor",
+                  ].map((key) => (
+                    <td key={key} className="p-2 border">
+                      {row[key]}
+                    </td>
+                  ))}
+                </tr>
+              ))}
           </tbody>
         </table>
       </div>

@@ -113,7 +113,7 @@ export default function ShiftPredictionForm() {
 
   return (
     <div className="p-6 max-w-md mx-auto bg-white rounded-xl shadow-md space-y-4">
-      <h2 className="text-xl font-bold">Predict Time Cycles from Shift Data</h2>
+      <h2 className="text-xl font-bold">Predict Risk Level from Shift Data</h2>
       <form onSubmit={handleSubmit} className="space-y-3">
 
         <label className="block">
@@ -171,7 +171,7 @@ export default function ShiftPredictionForm() {
 
       {result !== null && (
         <div className="mt-4">
-          <strong>Predicted Time Cycles:</strong> {result}
+          <strong>Predicted Risk Number:</strong> {result}
         </div>
       )}
     </div>

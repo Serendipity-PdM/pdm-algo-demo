@@ -15,7 +15,7 @@ import uvicorn
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -71,6 +71,7 @@ def load_shift_data():
     try:
         file_path = Path(__file__).parent / "datasets" / "shift-data" / "train_FD001_with_humans.csv"
         df = pd.read_csv(file_path)
+        df = df.replace({np.nan: None}) 
         return df.to_dict(orient="records")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"File load error: {e}")
@@ -96,10 +97,10 @@ def append_shift_entry(req: ShiftVectorRequest):
     # Define field names matching the 15 columns used in training
     field_names = [
         "operator_id", "age", "avg_week_hours", "last_year_incidents",
-        "shift_type_Afternoon", "shift_type_Night",
-        "experience_level_Beginner", "experience_level_Intermediate", "experience_level_Experienced", "experience_level_Expert",
+        "shift_type_Morning", "shift_type_Afternoon", "shift_type_Night",
+        "experience_level_Intern","experience_level_Beginner", "experience_level_Intermediate", "experience_level_Experienced", "experience_level_Expert",
         "gender_Female", "gender_Male",
-        "extra_1", "extra_2", "extra_3"  # Rename or remove based on your actual 15 features if different
+        "extra_1"  # Rename or remove based on your actual 15 features if different
     ]
 
     if len(field_names) != 15:
