@@ -41,9 +41,7 @@ export default function ShiftRiskDashboard() {
     setFormData((prev) => ({
       ...prev,
       [name]:
-        ["operator_id", "age", "avg_week_hours", "last_year_incidents"].includes(
-          name
-        )
+        ["operator_id", "age", "avg_week_hours", "last_year_incidents"].includes(name)
           ? Number(value)
           : value,
     }));
@@ -52,35 +50,35 @@ export default function ShiftRiskDashboard() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
-  
+
     const numeric = [
       formData.operator_id,
       formData.age,
       formData.avg_week_hours,
       formData.last_year_incidents,
     ];
-  
+
     const shiftMap = {
       Morning: [1, 0, 0],
       Afternoon: [0, 1, 0],
       Night: [0, 0, 1],
     };
-  
+
     const expMap = {
-      Intern:        [1, 0, 0, 0, 0],
-      Beginner:      [0, 1, 0, 0, 0],
-      Intermediate:  [0, 0, 1, 0, 0],
-      Experienced:   [0, 0, 0, 1, 0],
-      Expert:        [0, 0, 0, 0, 1],
+      Intern: [1, 0, 0, 0, 0],
+      Beginner: [0, 1, 0, 0, 0],
+      Intermediate: [0, 0, 1, 0, 0],
+      Experienced: [0, 0, 0, 1, 0],
+      Expert: [0, 0, 0, 0, 1],
     };
-  
+
     const genderMap = {
       Male: [1, 0],
       Female: [0, 1],
     };
-  
-    const extraFeature = 0; // filler column to ensure 15 features
-  
+
+    const extraFeature = 0;
+
     const vector = [
       ...numeric,
       ...shiftMap[formData.shift_type],
@@ -88,27 +86,27 @@ export default function ShiftRiskDashboard() {
       ...genderMap[formData.gender],
       extraFeature,
     ];
-  
+
     if (vector.length !== 15) {
       console.error("Invalid vector length:", vector.length, vector);
       setLoading(false);
       return;
     }
-  
+
     try {
       const response = await fetch("http://localhost:8000/append_shift_entry", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ vector }),
       });
-  
+
       if (!response.ok) {
         const errorText = await response.text();
         console.error("Backend error response:", errorText);
         setLoading(false);
         return;
       }
-  
+
       const newEntry = await response.json();
       setShiftData((prev) => [...prev, newEntry]);
       setFormData({
@@ -127,7 +125,6 @@ export default function ShiftRiskDashboard() {
       setLoading(false);
     }
   };
-  
 
   return (
     <div className="p-6 max-w-screen-xl mx-auto">

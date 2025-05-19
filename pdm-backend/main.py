@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uvicorn
 
-# FastAPI Setup 
+# --- FastAPI Setup ---
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
@@ -20,9 +20,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# --- Device Setup ---
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# Shift MLP Model 
+# --- Shift MLP Model ---
 class ImprovedMLP(torch.nn.Module):
     def __init__(self, input_size):
         super().__init__()
@@ -38,73 +40,70 @@ class ImprovedMLP(torch.nn.Module):
             torch.nn.ReLU(),
             torch.nn.Linear(16, 1)
         )
-
     def forward(self, x):
         return self.net(x)
 
-# Load Trained Model
+# --- Load Trained Model ---
 shift_model = ImprovedMLP(input_size=15).to(device)
 shift_model.load_state_dict(torch.load("mlp_shift_model.pth", map_location=device))
 shift_model.eval()
 
-# Request Schema
+# --- Pydantic Model ---
 class ShiftVectorRequest(BaseModel):
     vector: list[float]
 
-# Predict Shift Endpoint
+# === Predict Single Vector ===
 @app.post("/predict_shift")
 def predict_shift(data: ShiftVectorRequest):
     if len(data.vector) != 15:
         raise HTTPException(status_code=400, detail=f"Expected 15 input features, got {len(data.vector)}")
-
-    input_array = np.array(data.vector, dtype=np.float32).reshape(1, -1)
-    input_tensor = torch.tensor(input_array, dtype=torch.float32).to(device)
+    
+    input_tensor = torch.tensor([data.vector], dtype=torch.float32).to(device)
 
     with torch.no_grad():
         pred = shift_model(input_tensor).cpu().item()
 
     return {"predicted_time_cycles": float(pred)}
 
-# Load Dashboard Data
+# === Load Dashboard Data ===
 @app.get("/load_shift_data")
 def load_shift_data():
+    file_path = Path(__file__).parent / "datasets" / "shift-data" / "train_FD001_with_humans.csv"
     try:
-        file_path = Path(__file__).parent / "datasets" / "shift-data" / "train_FD001_with_humans.csv"
         df = pd.read_csv(file_path)
-        df = df.replace({np.nan: None}) 
+        df = df.replace({np.nan: None})
         return df.to_dict(orient="records")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"File load error: {e}")
+        raise HTTPException(status_code=500, detail=f"Error reading CSV: {e}")
 
-# Append New Entry & Predict
+# === Append New Entry ===
 @app.post("/append_shift_entry")
 def append_shift_entry(req: ShiftVectorRequest):
     if len(req.vector) != 15:
         raise HTTPException(status_code=400, detail=f"Expected 15 input features, got {len(req.vector)}")
 
-    input_array = np.array(req.vector, dtype=np.float32).reshape(1, -1)
-    input_tensor = torch.tensor(input_array, dtype=torch.float32).to(device)
+    input_tensor = torch.tensor([req.vector], dtype=torch.float32).to(device)
 
     with torch.no_grad():
         predicted_time_cycles = shift_model(input_tensor).cpu().item()
 
     risk = (
-        "High" if predicted_time_cycles < 60
-        else "Medium" if predicted_time_cycles < 120
+        "High" if predicted_time_cycles < 140
+        else "Medium" if predicted_time_cycles < 180
         else "Low"
     )
 
-    # Define field names matching the 15 columns used in training
     field_names = [
         "operator_id", "age", "avg_week_hours", "last_year_incidents",
         "shift_type_Morning", "shift_type_Afternoon", "shift_type_Night",
-        "experience_level_Intern","experience_level_Beginner", "experience_level_Intermediate", "experience_level_Experienced", "experience_level_Expert",
+        "experience_level_Intern","experience_level_Beginner", "experience_level_Intermediate",
+        "experience_level_Experienced", "experience_level_Expert",
         "gender_Female", "gender_Male",
-        "extra_1"  # Rename or remove based on your actual 15 features if different
+        "extra_1"
     ]
 
     if len(field_names) != 15:
-        raise HTTPException(status_code=500, detail="Mismatch between field names and input vector size.")
+        raise HTTPException(status_code=500, detail="Field mapping mismatch")
 
     new_entry = {name: val for name, val in zip(field_names, req.vector)}
     new_entry["predicted_time_cycles"] = predicted_time_cycles
@@ -120,6 +119,7 @@ def append_shift_entry(req: ShiftVectorRequest):
     df.to_csv(file_path, index=False)
 
     return new_entry
+
 
 # Machine Predcition Section
 WINDOW_SIZE = 25
