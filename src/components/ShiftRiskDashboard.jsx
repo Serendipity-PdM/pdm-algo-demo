@@ -267,7 +267,6 @@ export default function ShiftRiskDashboard() {
               </select>
             </label>
           ))}
-
           {[
             ["operator_id", "Operator ID"],
             ["age", "Age"],
@@ -282,6 +281,8 @@ export default function ShiftRiskDashboard() {
                 value={formData[name]}
                 onChange={handleFormChange}
                 className="mt-1 p-2 border rounded"
+                min={name === "operator_id" ? 1 : name === "age" ? 20 : name === "avg_week_hours" ? 30 : 0}
+                max={name === "operator_id" ? 10 : name === "age" ? 65 : name === "avg_week_hours" ? 70 : 15}
               />
             </label>
           ))}
