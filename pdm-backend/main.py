@@ -10,12 +10,13 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uvicorn
+from fastapi import Request
 
 # --- FastAPI Setup ---
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -24,7 +25,7 @@ app.add_middleware(
 # --- Device Setup ---
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# === Shift MLP Model ===
+# --- Shift MLP Model ---
 class ImprovedMLP(torch.nn.Module):
     def __init__(self, input_size):
         super().__init__()
@@ -40,129 +41,113 @@ class ImprovedMLP(torch.nn.Module):
             torch.nn.ReLU(),
             torch.nn.Linear(16, 1)
         )
-
     def forward(self, x):
         return self.net(x)
 
-# --- Load Shift Model ---
-shift_scaler = joblib.load("mlp_shift_scaler.pkl")
+# --- Load Trained Model ---
 shift_model = ImprovedMLP(input_size=15).to(device)
 shift_model.load_state_dict(torch.load("mlp_shift_model.pth", map_location=device))
 shift_model.eval()
 
-# --- Shift API Schema ---
-class ShiftDataRequest(BaseModel):
-    shift_type: str
-    operator_id: int
-    experience_level: str
-    age: int
-    gender: str
-    avg_week_hours: float
-    last_year_incidents: int
+# --- Pydantic Model ---
+class ShiftVectorRequest(BaseModel):
+    vector: list[float]
 
+# === Predict Single Vector ===
 @app.post("/predict_shift")
-def predict_shift(data: ShiftDataRequest):
-    print("Received:", data)
-    shift_map = {"Morning": [1, 0, 0], "Afternoon": [0, 1, 0], "Night": [0, 0, 1]}
-    exp_map = {
-        "Intern": [1, 0, 0, 0, 0],
-        "Beginner": [0, 1, 0, 0, 0],
-        "Intermediate": [0, 0, 1, 0, 0],
-        "Experienced": [0, 0, 0, 1, 0],
-        "Expert": [0, 0, 0, 0, 1]
-    }
-    gender_map = {"Male": [1, 0], "Female": [0, 1]}
-
-    row = [
-        data.operator_id,
-        data.age,
-        data.avg_week_hours,
-        data.last_year_incidents
-    ] + shift_map.get(data.shift_type, [0, 0, 0]) \
-      + exp_map.get(data.experience_level, [0, 0, 0, 0, 0]) \
-      + gender_map.get(data.gender, [0, 0])
-
-    if len(row) != 13:
-        raise HTTPException(status_code=400, detail=f"Expected 13 input features, got {len(row)}")
-
-    X = np.array([row])
-    X_scaled = shift_scaler.transform(X)
-    X_tensor = torch.tensor(X_scaled, dtype=torch.float32).to(device)
+def predict_shift(data: ShiftVectorRequest):
+    if len(data.vector) != 15:
+        raise HTTPException(status_code=400, detail=f"Expected 15 input features, got {len(data.vector)}")
+    
+    input_tensor = torch.tensor([data.vector], dtype=torch.float32).to(device)
 
     with torch.no_grad():
-        pred = shift_model(X_tensor).cpu().item()
+        pred = shift_model(input_tensor).cpu().item()
 
     return {"predicted_time_cycles": float(pred)}
 
+# === Load Dashboard Data ===
 @app.get("/load_shift_data")
-def load_shift_data():
+def load_shift_data(request: Request):
+    file_path = Path(__file__).parent / "datasets" / "shift-data" / "train_FD001_with_humans.csv"
+
     try:
-        df = pd.read_csv("datasets/shift-data/train_FD001_with_humans.csv")
-        return df.to_dict(orient="records")
+        df = pd.read_csv(file_path)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"Error reading CSV: {e}")
 
+    # Get pagination parameters
+    offset = int(request.query_params.get("offset", 0))
+    limit = int(request.query_params.get("limit", 500))
+
+    # Slice the DataFrame
+    paginated_df = df.iloc[offset : offset + limit].replace({np.nan: None})
+
+    return paginated_df.to_dict(orient="records")
+
+# === Append New Entry ===
 @app.post("/append_shift_entry")
-def append_shift_entry(data: ShiftDataRequest):
-    shift_map = {"Morning": [1, 0, 0], "Afternoon": [0, 1, 0], "Night": [0, 0, 1]}
-    exp_map = {
-        "Intern": [1, 0, 0, 0, 0],
-        "Beginner": [0, 1, 0, 0, 0],
-        "Intermediate": [0, 0, 1, 0, 0],
-        "Experienced": [0, 0, 0, 1, 0],
-        "Expert": [0, 0, 0, 0, 1]
-    }
-    gender_map = {"Male": [1, 0], "Female": [0, 1]}
+def append_shift_entry(req: ShiftVectorRequest):
+    if len(req.vector) != 15:
+        raise HTTPException(status_code=400, detail=f"Expected 15 input features, got {len(req.vector)}")
 
-    row = [
-        data.operator_id,
-        data.age,
-        data.avg_week_hours,
-        data.last_year_incidents
-    ] + shift_map.get(data.shift_type, [0, 0, 0]) \
-      + exp_map.get(data.experience_level, [0, 0, 0, 0, 0]) \
-      + gender_map.get(data.gender, [0, 0])
-
-    if len(row) != 13:
-        raise HTTPException(status_code=400, detail=f"Expected 13 input features, got {len(row)}")
-
-    X = np.array([row])
-    X_scaled = shift_scaler.transform(X)
-    X_tensor = torch.tensor(X_scaled, dtype=torch.float32).to(device)
+    # --- Predict ---
+    input_array = np.array(req.vector, dtype=np.float32).reshape(1, -1)
+    input_tensor = torch.tensor(input_array, dtype=torch.float32).to(device)
 
     with torch.no_grad():
-        predicted_time_cycles = shift_model(X_tensor).cpu().item()
+        predicted_time_cycles = shift_model(input_tensor).cpu().item()
 
     risk = (
-        "High" if predicted_time_cycles < 60
-        else "Medium" if predicted_time_cycles < 120
+        "High" if predicted_time_cycles < 140
+        else "Medium" if predicted_time_cycles < 180
         else "Low"
     )
 
-    file_path = "datasets/shift-data/train_FD001_with_humans.csv"
+    # --- Decode One-Hot to Labels ---
+    shift_type_labels = ["Morning", "Afternoon", "Night"]
+    exp_labels = ["Intern", "Beginner", "Intermediate", "Experienced", "Expert"]
+    gender_labels = ["Male", "Female"]
+
+    # Extract indices from the vector
+    shift_type_vector = req.vector[4:7]
+    experience_vector = req.vector[7:12]
+    gender_vector = req.vector[12:14]
+
+    try:
+        shift_type = shift_type_labels[shift_type_vector.index(1)]
+        experience_level = exp_labels[experience_vector.index(1)]
+        gender = gender_labels[gender_vector.index(1)]
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid one-hot encoding in vector.")
+
+    readable_entry = {
+        "shift_type": shift_type,
+        "operator_id": int(req.vector[0]),
+        "experience_level": experience_level,
+        "age": int(req.vector[1]),
+        "gender": gender,
+        "avg_week_hours": float(req.vector[2]),
+        "last_year_incidents": int(req.vector[3]),
+        "predicted_time_cycles": predicted_time_cycles,
+        "risk_factor": risk
+    }
+
+    # --- Append to CSV ---
+    file_path = Path(__file__).parent / "datasets" / "shift-data" / "train_FD001_with_humans.csv"
     try:
         df = pd.read_csv(file_path)
     except:
         df = pd.DataFrame()
 
-    new_entry = {
-        "shift_type": data.shift_type,
-        "operator_id": data.operator_id,
-        "experience_level": data.experience_level,
-        "age": data.age,
-        "gender": data.gender,
-        "avg_week_hours": data.avg_week_hours,
-        "last_year_incidents": data.last_year_incidents,
-        "predicted_time_cycles": predicted_time_cycles,
-        "risk_factor": risk
-    }
-
-    df = pd.concat([df, pd.DataFrame([new_entry])], ignore_index=True)
+    df = pd.concat([df, pd.DataFrame([readable_entry])], ignore_index=True)
     df.to_csv(file_path, index=False)
 
-    return new_entry
+    return readable_entry
 
-# === MACHINE PREDICTION SECTION (unchanged) ===
+
+
+# Machine Predcition Section
 WINDOW_SIZE = 25
 RAW_FEATURES = ["os1", "os2", "os3"] + [f"s_{i}" for i in range(1, 22)]
 DROP_SENSORS = ["s_1", "s_5", "s_6", "s_10", "s_16", "s_18", "s_19"]
@@ -206,6 +191,7 @@ class ImprovedRULLSTM(torch.nn.Module):
         normed = self.norm(last_hidden)
         return self.fc(normed)
 
+# Load scaler & LSTM model
 SCALER_PATH = Path("scaler_fd001.pkl")
 MODEL_PATH = Path("rul_model_500.pth")
 scaler = joblib.load(SCALER_PATH)
@@ -235,6 +221,6 @@ def predict(req: SequenceRequest):
         pred = model(tensor).cpu().item()
     return {"rul": float(min(pred, 150.0))}
 
-# --- Start Server ---
+# Start Server
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
