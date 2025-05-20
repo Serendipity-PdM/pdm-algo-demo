@@ -10,6 +10,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uvicorn
+from fastapi import Request
 
 # --- FastAPI Setup ---
 app = FastAPI()
@@ -67,14 +68,22 @@ def predict_shift(data: ShiftVectorRequest):
 
 # === Load Dashboard Data ===
 @app.get("/load_shift_data")
-def load_shift_data():
+def load_shift_data(request: Request):
     file_path = Path(__file__).parent / "datasets" / "shift-data" / "train_FD001_with_humans.csv"
+
     try:
         df = pd.read_csv(file_path)
-        df = df.replace({np.nan: None})
-        return df.to_dict(orient="records")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error reading CSV: {e}")
+
+    # Get pagination parameters
+    offset = int(request.query_params.get("offset", 0))
+    limit = int(request.query_params.get("limit", 500))
+
+    # Slice the DataFrame
+    paginated_df = df.iloc[offset : offset + limit].replace({np.nan: None})
+
+    return paginated_df.to_dict(orient="records")
 
 # === Append New Entry ===
 @app.post("/append_shift_entry")

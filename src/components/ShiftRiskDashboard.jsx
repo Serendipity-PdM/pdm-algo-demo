@@ -3,11 +3,12 @@ import { useEffect, useState } from "react";
 export default function ShiftRiskDashboard() {
   const [shiftData, setShiftData] = useState([]);
   const [filter, setFilter] = useState("All");
-  const filteredData =
-    filter === "All"
-      ? shiftData
-      : shiftData.filter((entry) => entry.risk_factor === filter);
+  const [offset, setOffset] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [showLoadMore, setShowLoadMore] = useState(false);
+  const [sortConfig, setSortConfig] = useState({ key: null, direction: "asc" });
   const [formData, setFormData] = useState({
     shift_type: "Morning",
     operator_id: 1,
@@ -17,25 +18,73 @@ export default function ShiftRiskDashboard() {
     avg_week_hours: 45,
     last_year_incidents: 1,
   });
-  const [loading, setLoading] = useState(false);
+
+  const filteredData =
+    filter === "All"
+      ? shiftData
+      : shiftData.filter((entry) => entry.risk_factor === filter);
 
   useEffect(() => {
-    fetch("http://localhost:8000/load_shift_data")
-      .then((res) => res.json())
-      .then((data) => {
-        if (Array.isArray(data)) {
-          setShiftData(data);
-        } else {
-          console.error("Invalid data format:", data);
-          setShiftData([]);
-        }
-      })
-      .catch((err) => {
-        console.error("Failed to load shift data", err);
-        setShiftData([]);
-      });
+    loadShiftData(0);
   }, []);
 
+  const loadShiftData = async (startOffset, sort = sortConfig) => {
+    try {
+      const params = new URLSearchParams({
+        offset: startOffset,
+        limit: 500,
+      });
+  
+      if (sort.key && sort.direction) {
+        params.append("sort_key", sort.key);
+        params.append("sort_direction", sort.direction);
+      }
+  
+      const res = await fetch(`http://localhost:8000/load_shift_data?${params.toString()}`);
+      const data = await res.json();
+  
+      if (Array.isArray(data)) {
+        if (startOffset === 0) {
+          setShiftData(data);
+        } else {
+          setShiftData((prev) => [...prev, ...data]);
+        }
+  
+        setOffset(startOffset + 500);
+        setHasMore(data.length === 500);
+  
+        setShowLoadMore(false);
+        setTimeout(() => {
+          setShowLoadMore(true);
+        }, 1500);
+      } else {
+        console.error("Invalid data format:", data);
+      }
+    } catch (err) {
+      console.error("Failed to load shift data", err);
+    }
+  };
+  
+  
+  const sortedData = [...filteredData].sort((a, b) => {
+    const { key, direction } = sortConfig;
+    if (!key || !direction) return 0;
+  
+    const aVal = a[key];
+    const bVal = b[key];
+  
+    if (aVal == null) return 1;
+    if (bVal == null) return -1;
+  
+    if (typeof aVal === "number" && typeof bVal === "number") {
+      return direction === "asc" ? aVal - bVal : bVal - aVal;
+    }
+  
+    return direction === "asc"
+      ? String(aVal).localeCompare(String(bVal))
+      : String(bVal).localeCompare(String(aVal));
+  });  
+  
   const handleFormChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({
@@ -207,51 +256,107 @@ export default function ShiftRiskDashboard() {
 
       <div className="overflow-x-auto">
         <table className="w-full border text-sm">
-          <thead className="bg-gray-200">
-            <tr>
-              <th className="p-2 text-left border">Worker No</th>
-              {[
-                "shift_type",
-                "operator_id",
-                "experience_level",
-                "age",
-                "gender",
-                "avg_week_hours",
-                "last_year_incidents",
-                "predicted_time_cycles",
-                "risk_factor",
-              ].map((col) => (
-                <th key={col} className="p-2 text-left capitalize border">
-                  {col.replaceAll("_", " ")}
+        <thead className="bg-gray-200">
+          <tr>
+            {["Worker No",
+              "shift_type",
+              "operator_id",
+              "experience_level",
+              "age",
+              "gender",
+              "avg_week_hours",
+              "last_year_incidents",
+              "predicted_time_cycles",
+              "risk_factor"
+            ].map((col) => {
+              const isSortable = ["Worker No", "operator_id", "age", "avg_week_hours", "last_year_incidents", "predicted_time_cycles"].includes(col);
+              const key = col === "Worker No" ? "index" : col;
+
+              return (
+                <th
+                  key={col}
+                  onClick={() => {
+                    if (!isSortable) return;
+                    setSortConfig((prev) => {
+                      if (prev.key === key && prev.direction === "asc") {
+                        return { key, direction: "desc" };
+                      } else if (prev.key === key && prev.direction === "desc") {
+                        return { key: null, direction: null }; 
+                      } else {
+                        return { key, direction: "asc" };
+                      }
+                    });
+                  }}
+                  className={`p-2 text-left border capitalize cursor-pointer select-none ${
+                    sortConfig.key === key ? "bg-gray-300" : ""
+                  }`}
+                >
+                  {col}
+                  {sortConfig.key === key && (
+                    <span className="ml-1 text-xs">
+                      {sortConfig.direction === "asc" ? "▲" : sortConfig.direction === "desc" ? "▼" : ""}
+                    </span>
+                  )}
                 </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {Array.isArray(filteredData) &&
-              filteredData.map((row, idx) => (
+              );
+            })}
+          </tr>
+        </thead>
+        <tbody>
+          {Array.isArray(filteredData) &&
+            filteredData
+              .map((row, idx) => ({ ...row, index: idx + 1 })) // Add Worker No
+              .sort((a, b) => {
+                const { key, direction } = sortConfig;
+                if (!key || !direction) return 0;
+                if (key === "index") return direction === "asc" ? a.index - b.index : b.index - a.index;
+                return direction === "asc"
+                  ? Number(a[key]) - Number(b[key])
+                  : Number(b[key]) - Number(a[key]);
+              })
+              .map((row, idx) => (
                 <tr key={idx} className="odd:bg-white even:bg-gray-50">
-                  <td className="p-2 border font-semibold">{idx + 1}</td>
-                  {[
-                    "shift_type",
-                    "operator_id",
-                    "experience_level",
-                    "age",
-                    "gender",
-                    "avg_week_hours",
-                    "last_year_incidents",
-                    "predicted_time_cycles",
-                    "risk_factor",
-                  ].map((key) => (
-                    <td key={key} className="p-2 border">
-                      {row[key]}
+                  {["index", "shift_type", "operator_id", "experience_level", "age", "gender", "avg_week_hours", "last_year_incidents", "predicted_time_cycles", "risk_factor"].map((key) => (
+                    <td
+                      key={key}
+                      className={`p-2 border ${
+                        sortConfig.key === key ? "bg-gray-100" : ""
+                      }`}
+                    >
+                      {key === "risk_factor" ? (
+                        <span
+                          className={`px-2 py-1 text-xs font-semibold rounded-full ${
+                            row[key] === "Low"
+                              ? "bg-green-100 text-green-700"
+                              : row[key] === "Medium"
+                              ? "bg-yellow-100 text-yellow-800"
+                              : row[key] === "High"
+                              ? "bg-red-100 text-red-700"
+                              : "bg-gray-100 text-gray-600"
+                          }`}
+                        >
+                          {row[key]}
+                        </span>
+                      ) : (
+                        row[key]
+                      )}
                     </td>
                   ))}
                 </tr>
               ))}
-          </tbody>
+        </tbody>
         </table>
       </div>
+            {hasMore && showLoadMore && (
+        <div className="mt-4 text-center">
+          <button
+            onClick={() => loadShiftData(offset)}
+            className="px-4 py-2 bg-gray-800 text-white rounded hover:bg-gray-900"
+          >
+            Load More
+          </button>
+        </div>
+      )}
     </div>
   );
 }
