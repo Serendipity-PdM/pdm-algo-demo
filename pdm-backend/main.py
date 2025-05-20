@@ -91,7 +91,9 @@ def append_shift_entry(req: ShiftVectorRequest):
     if len(req.vector) != 15:
         raise HTTPException(status_code=400, detail=f"Expected 15 input features, got {len(req.vector)}")
 
-    input_tensor = torch.tensor([req.vector], dtype=torch.float32).to(device)
+    # --- Predict ---
+    input_array = np.array(req.vector, dtype=np.float32).reshape(1, -1)
+    input_tensor = torch.tensor(input_array, dtype=torch.float32).to(device)
 
     with torch.no_grad():
         predicted_time_cycles = shift_model(input_tensor).cpu().item()
@@ -102,32 +104,47 @@ def append_shift_entry(req: ShiftVectorRequest):
         else "Low"
     )
 
-    field_names = [
-        "operator_id", "age", "avg_week_hours", "last_year_incidents",
-        "shift_type_Morning", "shift_type_Afternoon", "shift_type_Night",
-        "experience_level_Intern","experience_level_Beginner", "experience_level_Intermediate",
-        "experience_level_Experienced", "experience_level_Expert",
-        "gender_Female", "gender_Male",
-        "extra_1"
-    ]
+    # --- Decode One-Hot to Labels ---
+    shift_type_labels = ["Morning", "Afternoon", "Night"]
+    exp_labels = ["Intern", "Beginner", "Intermediate", "Experienced", "Expert"]
+    gender_labels = ["Male", "Female"]
 
-    if len(field_names) != 15:
-        raise HTTPException(status_code=500, detail="Field mapping mismatch")
+    # Extract indices from the vector
+    shift_type_vector = req.vector[4:7]
+    experience_vector = req.vector[7:12]
+    gender_vector = req.vector[12:14]
 
-    new_entry = {name: val for name, val in zip(field_names, req.vector)}
-    new_entry["predicted_time_cycles"] = predicted_time_cycles
-    new_entry["risk_factor"] = risk
+    try:
+        shift_type = shift_type_labels[shift_type_vector.index(1)]
+        experience_level = exp_labels[experience_vector.index(1)]
+        gender = gender_labels[gender_vector.index(1)]
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid one-hot encoding in vector.")
 
+    readable_entry = {
+        "shift_type": shift_type,
+        "operator_id": int(req.vector[0]),
+        "experience_level": experience_level,
+        "age": int(req.vector[1]),
+        "gender": gender,
+        "avg_week_hours": float(req.vector[2]),
+        "last_year_incidents": int(req.vector[3]),
+        "predicted_time_cycles": predicted_time_cycles,
+        "risk_factor": risk
+    }
+
+    # --- Append to CSV ---
     file_path = Path(__file__).parent / "datasets" / "shift-data" / "train_FD001_with_humans.csv"
     try:
         df = pd.read_csv(file_path)
     except:
         df = pd.DataFrame()
 
-    df = pd.concat([df, pd.DataFrame([new_entry])], ignore_index=True)
+    df = pd.concat([df, pd.DataFrame([readable_entry])], ignore_index=True)
     df.to_csv(file_path, index=False)
 
-    return new_entry
+    return readable_entry
+
 
 
 # Machine Predcition Section

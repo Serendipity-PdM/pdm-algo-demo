@@ -9,6 +9,8 @@ export default function ShiftRiskDashboard() {
   const [loading, setLoading] = useState(false);
   const [showLoadMore, setShowLoadMore] = useState(false);
   const [sortConfig, setSortConfig] = useState({ key: null, direction: "asc" });
+  const [loadingAll, setLoadingAll] = useState(false);
+  const [loadingDots, setLoadingDots] = useState(".");
   const [formData, setFormData] = useState({
     shift_type: "Morning",
     operator_id: 1,
@@ -28,31 +30,39 @@ export default function ShiftRiskDashboard() {
     loadShiftData(0);
   }, []);
 
+  useEffect(() => {
+    if (!loadingAll) return;
+    const interval = setInterval(() => {
+      setLoadingDots((prev) => (prev === "..." ? "." : prev + "."));
+    }, 400);
+    return () => clearInterval(interval);
+  }, [loadingAll]);
+
   const loadShiftData = async (startOffset, sort = sortConfig) => {
     try {
       const params = new URLSearchParams({
         offset: startOffset,
         limit: 500,
       });
-  
+
       if (sort.key && sort.direction) {
         params.append("sort_key", sort.key);
         params.append("sort_direction", sort.direction);
       }
-  
+
       const res = await fetch(`http://localhost:8000/load_shift_data?${params.toString()}`);
       const data = await res.json();
-  
+
       if (Array.isArray(data)) {
         if (startOffset === 0) {
           setShiftData(data);
         } else {
           setShiftData((prev) => [...prev, ...data]);
         }
-  
+
         setOffset(startOffset + 500);
         setHasMore(data.length === 500);
-  
+
         setShowLoadMore(false);
         setTimeout(() => {
           setShowLoadMore(true);
@@ -64,35 +74,58 @@ export default function ShiftRiskDashboard() {
       console.error("Failed to load shift data", err);
     }
   };
-  
-  
+
+  const loadAllData = async () => {
+    setLoadingAll(true);
+    setLoadingDots(".");
+    let fullData = [];
+    let pageOffset = 0;
+    const pageLimit = 1000;
+
+    while (true) {
+      const res = await fetch(`http://localhost:8000/load_shift_data?offset=${pageOffset}&limit=${pageLimit}`);
+      const batch = await res.json();
+
+      if (!Array.isArray(batch) || batch.length === 0) break;
+
+      fullData = [...fullData, ...batch];
+      pageOffset += pageLimit;
+
+      if (batch.length < pageLimit) break;
+    }
+
+    setShiftData(fullData);
+    setOffset(pageOffset);
+    setHasMore(false);
+    setLoadingAll(false);
+  };
+
   const sortedData = [...filteredData].sort((a, b) => {
     const { key, direction } = sortConfig;
     if (!key || !direction) return 0;
-  
+
     const aVal = a[key];
     const bVal = b[key];
-  
+
     if (aVal == null) return 1;
     if (bVal == null) return -1;
-  
+
     if (typeof aVal === "number" && typeof bVal === "number") {
       return direction === "asc" ? aVal - bVal : bVal - aVal;
     }
-  
+
     return direction === "asc"
       ? String(aVal).localeCompare(String(bVal))
       : String(bVal).localeCompare(String(aVal));
-  });  
-  
+  });
+
   const handleFormChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({
       ...prev,
-      [name]:
-        ["operator_id", "age", "avg_week_hours", "last_year_incidents"].includes(name)
-          ? Number(value)
-          : value,
+      [name]: ["operator_id", "age", "avg_week_hours", "last_year_incidents"].includes(name)
+        ? Number(value)
+        : value,
     }));
   };
 
@@ -179,12 +212,21 @@ export default function ShiftRiskDashboard() {
     <div className="p-6 max-w-screen-xl mx-auto">
       <div className="flex justify-between items-center mb-4">
         <h2 className="text-2xl font-bold">Shift Risk Dashboard</h2>
-        <button
-          onClick={() => setShowForm((prev) => !prev)}
-          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-        >
-          {showForm ? "Hide Form" : "Add New Entry"}
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={loadAllData}
+            disabled={loadingAll}
+            className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700"
+          >
+            {loadingAll ? `Loading${loadingDots}` : "Load All Board"}
+          </button>
+          <button
+            onClick={() => setShowForm((prev) => !prev)}
+            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+          >
+            {showForm ? "Hide Form" : "Add New Entry"}
+          </button>
+        </div>
       </div>
 
       <div className="mb-4">
