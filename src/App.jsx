@@ -1,5 +1,5 @@
 import React from "react";
-import { BrowserRouter, Routes, Route } from "react-router-dom"; 
+import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Header from "./components/Header.jsx";
 import Hero from "./components/Hero.jsx";
 import PredictionForm from "./components/PredictionForm.jsx";
@@ -20,7 +20,7 @@ const App = () => {
               <>
                 <Hero />
                 <PredictionForm />
-                <ShiftPredictionForm />
+                {/* <ShiftPredictionForm /> */}
               </>
             }
           />
