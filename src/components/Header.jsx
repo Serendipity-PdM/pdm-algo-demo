@@ -12,6 +12,12 @@ const Header = () => {
 
       <div className="flex items-center gap-4">
         <button
+          onClick={() => navigate("/")}
+          className="bg-green-500 hover:bg-green-600 text-white px-3 py-1.5 rounded text-sm transition"
+        >
+          Machine PM Prediction
+        </button>
+        <button
           onClick={() => navigate("/shift-risk-dashboard")}
           className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1.5 rounded text-sm transition"
         >
